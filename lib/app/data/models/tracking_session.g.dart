@@ -22,13 +22,16 @@ class TrackingSessionAdapter extends TypeAdapter<TrackingSession> {
       clockOutTime: fields[2] as DateTime?,
       totalDistance: fields[3] as double,
       hourlyLogs: (fields[4] as List).cast<HourlyLocationLog>(),
+      routeCoordinates: (fields[5] as List)
+          .map((dynamic e) => (e as List).cast<double>())
+          .toList(),
     );
   }
 
   @override
   void write(BinaryWriter writer, TrackingSession obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.date)
       ..writeByte(1)
@@ -38,7 +41,9 @@ class TrackingSessionAdapter extends TypeAdapter<TrackingSession> {
       ..writeByte(3)
       ..write(obj.totalDistance)
       ..writeByte(4)
-      ..write(obj.hourlyLogs);
+      ..write(obj.hourlyLogs)
+      ..writeByte(5)
+      ..write(obj.routeCoordinates);
   }
 
   @override

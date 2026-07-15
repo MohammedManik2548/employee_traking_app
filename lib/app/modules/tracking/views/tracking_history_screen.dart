@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-
 import '../../controllers/tracking_controller.dart';
+import 'session_detail_map_screen.dart'; // Import your map view file
 
 class TrackingHistoryScreen extends StatelessWidget {
   final TrackingController controller = Get.find<TrackingController>();
@@ -32,16 +32,29 @@ class TrackingHistoryScreen extends StatelessWidget {
                 subtitle: Text("Distance: ${session.totalDistance.toStringAsFixed(2)} km"),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.all(16.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text("Clock In: ${DateFormat('hh:mm a').format(session.clockInTime)}"),
                         if (session.clockOutTime != null)
                           Text("Clock Out: ${DateFormat('hh:mm a').format(session.clockOutTime!)}"),
-                        const Divider(),
-                        const Text("Hourly Log Timeline:",
-                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 10),
+
+                        // NEW MAP ROUTE ACTION BUTTON
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Get.to(() => SessionDetailMapScreen(session: session));
+                            },
+                            icon: const Icon(Icons.map_outlined, color: Colors.indigo),
+                            label: const Text("View Route on Map", style: TextStyle(color: Colors.indigo)),
+                          ),
+                        ),
+
+                        const Divider(height: 20),
+                        const Text("Hourly Log Timeline:", style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 6),
                         ...session.hourlyLogs.map((log) => Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),

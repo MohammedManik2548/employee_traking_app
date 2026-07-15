@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
@@ -10,6 +11,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/location_payload.dart';
 import '../../data/models/tracking_session.dart';
 import '../../data/providers/hive_storage_service.dart';
+import '../../services/background_tracking_service.dart';
 
 
 class TrackingController extends GetxController {
@@ -41,6 +43,10 @@ class TrackingController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+
+    // Bind background channel pipeline stream to GetX handling thread
+    listenToLocationUpdates();
+
     polylines.add(
       Polyline(
         polylineId: const PolylineId('user_path'),
@@ -53,6 +59,22 @@ class TrackingController extends GetxController {
     checkAndRequestLocationPermission();
     loadHistoryFromHive();
   }
+
+  // @override
+  // void onInit() {
+  //   super.onInit();
+  //   polylines.add(
+  //     Polyline(
+  //       polylineId: const PolylineId('user_path'),
+  //       points: _routePoints,
+  //       color: Colors.indigo,
+  //       width: 5,
+  //     ),
+  //   );
+  //
+  //   checkAndRequestLocationPermission();
+  //   loadHistoryFromHive();
+  // }
 
   // ================= PERMISSION LOGIC =================
 
@@ -189,26 +211,60 @@ class TrackingController extends GetxController {
     await sendOrCacheLocation(payload);
   }
 
-  void toggleTracking() {
+  void toggleTracking() async {
     if (!isLocationGranted.value) {
       checkAndRequestLocationPermission();
       return;
     }
 
     isTracking.value = !isTracking.value;
+    final backgroundService = FlutterBackgroundService();
 
     if (isTracking.value) {
-      // Clock In
+      // --- CLOCK IN ---
       _clockInTime = DateTime.now();
       _currentHourlyLogs.clear();
       _lastLoggedHour = null;
       totalDistance.value = 0.0;
+
+      // START OS Background foreground process loop
+      bool isRunning = await backgroundService.isRunning();
+      if (!isRunning) {
+        await backgroundService.startService();
+      }
     } else {
-      // Clock Out
+      // --- CLOCK OUT ---
       currentSpeed.value = 0.0;
       _saveCurrentSessionToHistory();
+
+      // STOP OS Background processing loop completely
+      bool isRunning = await backgroundService.isRunning();
+      if (isRunning) {
+        backgroundService.invoke('stopService');
+      }
     }
   }
+
+  // void toggleTracking() {
+  //   if (!isLocationGranted.value) {
+  //     checkAndRequestLocationPermission();
+  //     return;
+  //   }
+  //
+  //   isTracking.value = !isTracking.value;
+  //
+  //   if (isTracking.value) {
+  //     // Clock In
+  //     _clockInTime = DateTime.now();
+  //     _currentHourlyLogs.clear();
+  //     _lastLoggedHour = null;
+  //     totalDistance.value = 0.0;
+  //   } else {
+  //     // Clock Out
+  //     currentSpeed.value = 0.0;
+  //     _saveCurrentSessionToHistory();
+  //   }
+  // }
 
   void _checkAndLogHourlyProgress(double lat, double lng, String addressName) {
     final now = DateTime.now();
@@ -237,15 +293,23 @@ class TrackingController extends GetxController {
 
     final todayStr = DateFormat('yyyy-MM-dd').format(_clockInTime!);
 
+    // Convert List<LatLng> to a serializable List<List<double>> for Hive
+    final serializableCoords = _routePoints.map((latLng) => [latLng.latitude, latLng.longitude]).toList();
+
     final newSession = TrackingSession(
       date: todayStr,
       clockInTime: _clockInTime!,
       clockOutTime: DateTime.now(),
       totalDistance: totalDistance.value,
       hourlyLogs: List.from(_currentHourlyLogs),
+      routeCoordinates: serializableCoords, // Pass the tracked route coordinates here
     );
 
     await _hiveStorage.saveOrUpdateSession(newSession);
+
+    // Clear the active route tracking path for a fresh session
+    _routePoints.clear();
+
     await loadHistoryFromHive();
     _sendHistoryToBackend(newSession);
   }

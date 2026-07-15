@@ -19,12 +19,17 @@ class TrackingSession extends HiveObject {
   @HiveField(4)
   final List<HourlyLocationLog> hourlyLogs;
 
+  // ADD THIS FIELD TO STORE THE COMPLETE ROUTE PATH COORDS
+  @HiveField(5)
+  final List<List<double>> routeCoordinates; // Stores raw pairs: [[lat, lng], [lat, lng]]
+
   TrackingSession({
     required this.date,
     required this.clockInTime,
     this.clockOutTime,
     required this.totalDistance,
     required this.hourlyLogs,
+    required this.routeCoordinates,
   });
 }
 

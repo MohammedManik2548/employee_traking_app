@@ -7,17 +7,17 @@ import 'package:get/get.dart';
 
 import '../modules/controllers/tracking_controller.dart';
 
-
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
-      autoStart: false,
+      autoStart: false, // Keep false! We toggle this explicitly on Clock In / Clock Out
       isForegroundMode: true,
       initialNotificationTitle: "Shift Active",
-      initialNotificationContent: "Tracking active location for work hours.",
+      initialNotificationContent: "Tracking location updates securely in background.",
+      foregroundServiceNotificationId: 888,
     ),
     iosConfiguration: IosConfiguration(
       autoStart: false,
@@ -26,7 +26,8 @@ Future<void> initializeBackgroundService() async {
     ),
   );
 }
-// Add this helper inside your background service file
+
+/// Call this in your TrackingView's onInit or build structure to listen to the pipeline
 void listenToLocationUpdates() {
   FlutterBackgroundService().on('location_update').listen((event) {
     if (event != null && Get.isRegistered<TrackingController>()) {
@@ -57,15 +58,17 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized();
 
   service.on('stopService').listen((event) {
     service.stopSelf();
   });
 
+  // Background stream runs independently of controller lifecycle status
   Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 15,
+      distanceFilter: 15, // Triggers stream update every 15 meters
     ),
   ).listen((Position position) {
     service.invoke('location_update', {
