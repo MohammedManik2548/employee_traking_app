@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../data/models/tracking_session.dart';
+import 'package:intl/intl.dart';
+
+
 
 class SessionDetailMapScreen extends StatelessWidget {
   final TrackingSession session;
@@ -9,7 +12,7 @@ class SessionDetailMapScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 1. Convert historical coordinates back into Google Map LatLng instances
+    /// Convert historical coordinates back into Google Map LatLng instances
     final List<LatLng> polylinePoints = session.routeCoordinates
         .map((coord) => LatLng(coord[0], coord[1]))
         .toList();
@@ -23,7 +26,7 @@ class SessionDetailMapScreen extends StatelessWidget {
       ),
     };
 
-    // 2. Generate markers for the hourly check-in stops
+    /// Generate markers for the hourly check-in stops
     final Set<Marker> markers = {};
     for (int i = 0; i < session.hourlyLogs.length; i++) {
       final log = session.hourlyLogs[i];
@@ -42,14 +45,14 @@ class SessionDetailMapScreen extends StatelessWidget {
       );
     }
 
-    // Fallback default target if route data happens to be empty
+    /// Fallback default target if route data happens to be empty
     final initialTarget = polylinePoints.isNotEmpty
         ? polylinePoints.first
         : const LatLng(23.8103, 90.4125);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Route Details: ${session.date}"),
+        title: Text("Route Details: ${DateFormat('MMM dd, yyyy').format(DateTime.parse(session.date))}"),
       ),
       body: GoogleMap(
         initialCameraPosition: CameraPosition(

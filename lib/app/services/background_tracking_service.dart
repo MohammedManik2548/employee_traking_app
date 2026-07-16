@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
-
 import '../modules/controllers/tracking_controller.dart';
 
 Future<void> initializeBackgroundService() async {
@@ -13,7 +12,7 @@ Future<void> initializeBackgroundService() async {
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
-      autoStart: false, // Keep false! We toggle this explicitly on Clock In / Clock Out
+      autoStart: false, /// Keep false! We toggle this explicitly on Clock In / Clock Out
       isForegroundMode: true,
       initialNotificationTitle: "Shift Active",
       initialNotificationContent: "Tracking location updates securely in background.",
@@ -64,11 +63,11 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  // Background stream runs independently of controller lifecycle status
+  /// Background stream runs independently of controller lifecycle status
   Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 15, // Triggers stream update every 15 meters
+      distanceFilter: 15, /// Triggers stream update every 15 meters
     ),
   ).listen((Position position) {
     service.invoke('location_update', {

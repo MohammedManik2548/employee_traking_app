@@ -41,7 +41,7 @@ class TrackingHistoryScreen extends StatelessWidget {
                           Text("Clock Out: ${DateFormat('hh:mm a').format(session.clockOutTime!)}"),
                         const SizedBox(height: 10),
 
-                        // NEW MAP ROUTE ACTION BUTTON
+                        /// NEW MAP ROUTE ACTION BUTTON
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(

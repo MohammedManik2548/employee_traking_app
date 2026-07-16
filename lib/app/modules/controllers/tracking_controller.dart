@@ -44,7 +44,7 @@ class TrackingController extends GetxController {
   void onInit() {
     super.onInit();
 
-    // Bind background channel pipeline stream to GetX handling thread
+    /// Bind background channel pipeline stream to GetX handling thread
     listenToLocationUpdates();
 
     polylines.add(
