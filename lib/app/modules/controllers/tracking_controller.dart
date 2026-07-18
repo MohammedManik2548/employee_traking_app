@@ -6,13 +6,12 @@ import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:dio/dio.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
 import 'package:intl/intl.dart';
 import '../../data/models/location_payload.dart';
 import '../../data/models/tracking_session.dart';
 import '../../data/providers/hive_storage_service.dart';
 import '../../services/background_tracking_service.dart';
-
 
 class TrackingController extends GetxController {
   final Dio _dio;
@@ -40,6 +39,10 @@ class TrackingController extends GetxController {
   final List<HourlyLocationLog> _currentHourlyLogs = [];
   int? _lastLoggedHour;
 
+  // Stream subscription to cancel when controller is destroyed
+  StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
+  bool _isDialogShowing = false;
+
   @override
   void onInit() {
     super.onInit();
@@ -57,26 +60,56 @@ class TrackingController extends GetxController {
     );
 
     checkAndRequestLocationPermission();
+    _monitorLocationServiceStatus(); // Start listening to hardware GPS status
     loadHistoryFromHive();
   }
 
-  // @override
-  // void onInit() {
-  //   super.onInit();
-  //   polylines.add(
-  //     Polyline(
-  //       polylineId: const PolylineId('user_path'),
-  //       points: _routePoints,
-  //       color: Colors.indigo,
-  //       width: 5,
-  //     ),
-  //   );
-  //
-  //   checkAndRequestLocationPermission();
-  //   loadHistoryFromHive();
-  // }
+  @override
+  void onClose() {
+    _serviceStatusSubscription?.cancel(); // Clean up the listener
+    super.onClose();
+  }
 
-  // ================= PERMISSION LOGIC =================
+  // ================= GPS HARDWARE MONITORING LOGIC =================
+
+  void _monitorLocationServiceStatus() {
+    // Check initial state right away
+    Geolocator.isLocationServiceEnabled().then((isEnabled) {
+      if (!isEnabled) {
+        _showLocationServicesDisabledDialog();
+      }
+    });
+
+    // Listen for runtime hardware changes (e.g., user toggles GPS off in notifications)
+    _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((ServiceStatus status) {
+      if (status == ServiceStatus.disabled) {
+        _showLocationServicesDisabledDialog();
+      } else if (status == ServiceStatus.enabled && _isDialogShowing) {
+        Get.back(); // Automatically close dialog if they turn GPS back on
+        _isDialogShowing = false;
+      }
+    });
+  }
+
+  void _showLocationServicesDisabledDialog() {
+    if (_isDialogShowing) return; // Prevent multiple nested dialogs popping up
+    _isDialogShowing = true;
+
+    Get.defaultDialog(
+      title: "Location Services Off",
+      middleText: "Your device's GPS/Location services are turned off. Please enable them to continue tracking your workspace shift.",
+      textConfirm: "Open Settings",
+      confirmTextColor: Colors.white,
+      barrierDismissible: false, // Force user to address it
+      onConfirm: () async {
+        _isDialogShowing = false;
+        Get.back();
+        await Geolocator.openLocationSettings(); // Opens system GPS toggles screen
+      },
+    );
+  }
+
+  // ================= LOCATION & PERMISSION HANDLING =================
 
   Future<void> checkAndRequestLocationPermission() async {
     PermissionStatus status = await Permission.location.status;
@@ -95,6 +128,8 @@ class TrackingController extends GetxController {
 
     if (status.isGranted) {
       isLocationGranted.value = true;
+      // Double check background location permission if we are tracking when minimized
+      await Permission.locationAlways.request();
     } else if (status.isPermanentlyDenied) {
       _showGoToSettingsDialog();
     } else if (status.isDenied) {
@@ -105,8 +140,7 @@ class TrackingController extends GetxController {
   void _showGoToSettingsDialog() {
     Get.defaultDialog(
       title: "Location Permission Denied",
-      middleText:
-      "Location access is permanently disabled. Please allow location permission in settings to track on the map.",
+      middleText: "Location access is permanently disabled. Please allow location permission in settings to track on the map.",
       textCancel: "Cancel",
       textConfirm: "Go to Settings",
       confirmTextColor: Colors.white,
@@ -120,8 +154,7 @@ class TrackingController extends GetxController {
   void _showRetryDialog() {
     Get.defaultDialog(
       title: "Permission Required",
-      middleText:
-      "Location permission is required for live map tracking. Would you like to grant permission?",
+      middleText: "Location permission is required for live map tracking. Would you like to grant permission?",
       textCancel: "Cancel",
       textConfirm: "Allow",
       confirmTextColor: Colors.white,
@@ -217,6 +250,13 @@ class TrackingController extends GetxController {
       return;
     }
 
+    // Guard checking if GPS is even active on the device before switching tracking on
+    bool gpsActive = await Geolocator.isLocationServiceEnabled();
+    if (!gpsActive) {
+      _showLocationServicesDisabledDialog();
+      return;
+    }
+
     isTracking.value = !isTracking.value;
     final backgroundService = FlutterBackgroundService();
 
@@ -244,27 +284,6 @@ class TrackingController extends GetxController {
       }
     }
   }
-
-  // void toggleTracking() {
-  //   if (!isLocationGranted.value) {
-  //     checkAndRequestLocationPermission();
-  //     return;
-  //   }
-  //
-  //   isTracking.value = !isTracking.value;
-  //
-  //   if (isTracking.value) {
-  //     // Clock In
-  //     _clockInTime = DateTime.now();
-  //     _currentHourlyLogs.clear();
-  //     _lastLoggedHour = null;
-  //     totalDistance.value = 0.0;
-  //   } else {
-  //     // Clock Out
-  //     currentSpeed.value = 0.0;
-  //     _saveCurrentSessionToHistory();
-  //   }
-  // }
 
   void _checkAndLogHourlyProgress(double lat, double lng, String addressName) {
     final now = DateTime.now();
@@ -302,7 +321,7 @@ class TrackingController extends GetxController {
       clockOutTime: DateTime.now(),
       totalDistance: totalDistance.value,
       hourlyLogs: List.from(_currentHourlyLogs),
-      routeCoordinates: serializableCoords, // Pass the tracked route coordinates here
+      routeCoordinates: serializableCoords,
     );
 
     await _hiveStorage.saveOrUpdateSession(newSession);
