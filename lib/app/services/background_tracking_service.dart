@@ -17,14 +17,14 @@ Future<void> initializeBackgroundService() async {
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
-      autoStart: true,
+      autoStart: false,
       isForegroundMode: true,
       initialNotificationTitle: "Always-On Tracking",
       initialNotificationContent: "Tracking location updates securely.",
       foregroundServiceNotificationId: 888,
     ),
     iosConfiguration: IosConfiguration(
-      autoStart: true,
+      autoStart: false,
       onForeground: onStart,
       onBackground: onIosBackground,
     ),
@@ -99,55 +99,67 @@ void onStart(ServiceInstance service) async {
   });
 
   /// Background stream runs independently of controller lifecycle status
-  Geolocator.getPositionStream(
-    locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 15, /// Triggers stream update every 15 meters
-    ),
-  ).listen((Position position) async {
-    final String timeStr = DateTime.now().toIso8601String();
+  try {
+    Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 15,
+      ),
+    ).listen((Position position) async {
+      final String timeStr = DateTime.now().toIso8601String();
 
-    // 1. Notify UI if the app is open
-    service.invoke('location_update', {
-      'lat': position.latitude,
-      'lng': position.longitude,
-      'speed': position.speed,
-      'time': timeStr,
-    });
+      // 1. Notify UI if the app is open
+      service.invoke('location_update', {
+        'lat': position.latitude,
+        'lng': position.longitude,
+        'speed': position.speed,
+        'time': timeStr,
+      });
 
-    try {
-      // 2. Perform Background Persistence & API Sync
-      final payload = LocationPayload(
-        employeeId: "EMP_12345",
-        latitude: position.latitude,
-        longitude: position.longitude,
-        speed: position.speed,
-        timestamp: timeStr,
-      );
+      try {
+        // 2. Perform Background Persistence & API Sync
+        final payload = LocationPayload(
+          employeeId: "EMP_12345",
+          latitude: position.latitude,
+          longitude: position.longitude,
+          speed: position.speed,
+          timestamp: timeStr,
+        );
 
-      // Attempt to sync cached locations first
-      final cachedLocations = await storage.getCachedLocations();
-      if (cachedLocations.isNotEmpty) {
-        await dio.post('/locations/batch',
-            data: cachedLocations.map((loc) => loc.toJson()).toList());
-        await storage.clearCache();
-      }
+        // Attempt to sync cached locations first
+        final cachedLocations = await storage.getCachedLocations();
+        if (cachedLocations.isNotEmpty) {
+          await dio.post('/locations/batch',
+              data: cachedLocations.map((loc) => loc.toJson()).toList());
+          await storage.clearCache();
+        }
 
-      // Send current location
-      final response = await dio.post('/locations', data: payload.toJson());
-      if (response.statusCode != 200 && response.statusCode != 201) {
+        // Send current location
+        final response = await dio.post('/locations', data: payload.toJson());
+        if (response.statusCode != 200 && response.statusCode != 201) {
+          await storage.cacheLocation(payload);
+        }
+      } catch (e) {
+        // If network fails, cache the current location
+        final payload = LocationPayload(
+          employeeId: "EMP_12345",
+          latitude: position.latitude,
+          longitude: position.longitude,
+          speed: position.speed,
+          timestamp: timeStr,
+        );
         await storage.cacheLocation(payload);
       }
-    } catch (e) {
-      // If network fails, cache the current location
-      final payload = LocationPayload(
-        employeeId: "EMP_12345",
-        latitude: position.latitude,
-        longitude: position.longitude,
-        speed: position.speed,
-        timestamp: timeStr,
-      );
-      await storage.cacheLocation(payload);
-    }
-  });
+    }, onError: (error) {
+      debugPrint("Background Location Stream Error: $error");
+      if (service is AndroidServiceInstance) {
+        service.setForegroundNotificationInfo(
+          title: "Tracking Paused",
+          content: "Location permissions are missing or GPS is off.",
+        );
+      }
+    });
+  } catch (e) {
+    debugPrint("Failed to start location stream: $e");
+  }
 }

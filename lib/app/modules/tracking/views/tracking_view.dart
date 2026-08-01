@@ -26,21 +26,35 @@ class TrackingView extends GetView<TrackingController> {
       body: Stack(
         children: [
           Obx(
-                () => GoogleMap(
-              initialCameraPosition: const CameraPosition(
-                target: LatLng(23.8103, 90.4125),
-                zoom: 14,
-              ),
-              myLocationEnabled: controller.isLocationGranted.value,
-              myLocationButtonEnabled: controller.isLocationGranted.value,
-              markers: controller.markers.toSet(),
-              polylines: controller.polylines.toSet(),
-              onMapCreated: (GoogleMapController gController) {
-                if (!controller.mapController.isCompleted) {
-                  controller.mapController.complete(gController);
-                }
-              },
-            ),
+            () {
+              if (!controller.isInitialLocationFetched.value) {
+                return const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Locating user...'),
+                    ],
+                  ),
+                );
+              }
+              return GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: controller.initialLocation.value,
+                  zoom: 14,
+                ),
+                myLocationEnabled: controller.isLocationGranted.value,
+                myLocationButtonEnabled: controller.isLocationGranted.value,
+                markers: controller.markers.toSet(),
+                polylines: controller.polylines.toSet(),
+                onMapCreated: (GoogleMapController gController) {
+                  if (!controller.mapController.isCompleted) {
+                    controller.mapController.complete(gController);
+                  }
+                },
+              );
+            },
           ),
           Positioned(
             left: 0,

@@ -24,6 +24,8 @@ class TrackingController extends GetxController {
   final RxDouble totalDistance = 0.0.obs;
   final RxString currentLocationName = "Fetching location...".obs;
   final RxBool isLocationGranted = false.obs;
+  final RxBool isInitialLocationFetched = false.obs;
+  final Rx<LatLng> initialLocation = const LatLng(23.8103, 90.4125).obs;
 
   // Saved Date-Wise History List
   final RxList<TrackingSession> historySessions = <TrackingSession>[].obs;
@@ -120,6 +122,7 @@ class TrackingController extends GetxController {
 
     if (status.isGranted) {
       isLocationGranted.value = true;
+      _setInitialLocation();
       _startBackgroundServiceIfPermissionGranted();
     } else if (status.isPermanentlyDenied) {
       _showGoToSettingsDialog();
@@ -135,6 +138,7 @@ class TrackingController extends GetxController {
       isLocationGranted.value = true;
       // Double check background location permission if we are tracking when minimized
       await Permission.locationAlways.request();
+      _setInitialLocation();
       _startBackgroundServiceIfPermissionGranted();
     } else if (status.isPermanentlyDenied) {
       _showGoToSettingsDialog();
@@ -150,6 +154,22 @@ class TrackingController extends GetxController {
       if (!isRunning) {
         await backgroundService.startService();
       }
+    }
+  }
+
+  Future<void> _setInitialLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      initialLocation.value = LatLng(position.latitude, position.longitude);
+      isInitialLocationFetched.value = true;
+    } catch (e) {
+      Position? lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        initialLocation.value = LatLng(lastKnown.latitude, lastKnown.longitude);
+      }
+      isInitialLocationFetched.value = true;
     }
   }
 
