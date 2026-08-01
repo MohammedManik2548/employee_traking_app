@@ -112,35 +112,7 @@ class TrackingView extends GetView<TrackingController> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  Container(
-                    width: double.infinity,
-                    height: 48,
-                    margin: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-                    child: Obx(
-                          () => ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: controller.isTracking.value
-                              ? Colors.redAccent
-                              : Colors.indigo,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: () {
-                          controller.toggleTracking();
-                        },
-                        child: Text(
-                          controller.isTracking.value ? 'CLOCK OUT' : 'CLOCK IN',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  SizedBox(height: MediaQuery.of(context).padding.bottom),
                 ],
               ),
             ),

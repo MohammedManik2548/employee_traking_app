@@ -20,7 +20,6 @@ class TrackingController extends GetxController {
   TrackingController(this._dio, this._hiveStorage);
 
   // Reactive UI States
-  final RxBool isTracking = false.obs;
   final RxDouble currentSpeed = 0.0.obs;
   final RxDouble totalDistance = 0.0.obs;
   final RxString currentLocationName = "Fetching location...".obs;
@@ -77,6 +76,8 @@ class TrackingController extends GetxController {
     Geolocator.isLocationServiceEnabled().then((isEnabled) {
       if (!isEnabled) {
         _showLocationServicesDisabledDialog();
+      } else {
+        _startBackgroundServiceIfPermissionGranted();
       }
     });
 
@@ -84,9 +85,12 @@ class TrackingController extends GetxController {
     _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((ServiceStatus status) {
       if (status == ServiceStatus.disabled) {
         _showLocationServicesDisabledDialog();
-      } else if (status == ServiceStatus.enabled && _isDialogShowing) {
-        Get.back(); // Automatically close dialog if they turn GPS back on
-        _isDialogShowing = false;
+      } else if (status == ServiceStatus.enabled) {
+        if (_isDialogShowing) {
+          Get.back(); // Automatically close dialog if they turn GPS back on
+          _isDialogShowing = false;
+        }
+        _startBackgroundServiceIfPermissionGranted();
       }
     });
   }
@@ -116,6 +120,7 @@ class TrackingController extends GetxController {
 
     if (status.isGranted) {
       isLocationGranted.value = true;
+      _startBackgroundServiceIfPermissionGranted();
     } else if (status.isPermanentlyDenied) {
       _showGoToSettingsDialog();
     } else {
@@ -130,10 +135,21 @@ class TrackingController extends GetxController {
       isLocationGranted.value = true;
       // Double check background location permission if we are tracking when minimized
       await Permission.locationAlways.request();
+      _startBackgroundServiceIfPermissionGranted();
     } else if (status.isPermanentlyDenied) {
       _showGoToSettingsDialog();
     } else if (status.isDenied) {
       _showRetryDialog();
+    }
+  }
+
+  Future<void> _startBackgroundServiceIfPermissionGranted() async {
+    if (isLocationGranted.value) {
+      final backgroundService = FlutterBackgroundService();
+      bool isRunning = await backgroundService.isRunning();
+      if (!isRunning) {
+        await backgroundService.startService();
+      }
     }
   }
 
@@ -174,8 +190,6 @@ class TrackingController extends GetxController {
     required String time,
     String employeeId = "EMP_12345",
   }) async {
-    if (!isTracking.value) return;
-
     final newPoint = LatLng(lat, lng);
 
     // 1. Calculate cumulative distance and speed
@@ -231,58 +245,6 @@ class TrackingController extends GetxController {
       final googleMapCtrl = await mapController.future;
       googleMapCtrl.animateCamera(CameraUpdate.newLatLng(newPoint));
     }
-
-    // 6. Cache/Send Raw Location Data
-    final payload = LocationPayload(
-      employeeId: employeeId,
-      latitude: lat,
-      longitude: lng,
-      speed: speed,
-      timestamp: time,
-    );
-
-    await sendOrCacheLocation(payload);
-  }
-
-  void toggleTracking() async {
-    if (!isLocationGranted.value) {
-      checkAndRequestLocationPermission();
-      return;
-    }
-
-    // Guard checking if GPS is even active on the device before switching tracking on
-    bool gpsActive = await Geolocator.isLocationServiceEnabled();
-    if (!gpsActive) {
-      _showLocationServicesDisabledDialog();
-      return;
-    }
-
-    isTracking.value = !isTracking.value;
-    final backgroundService = FlutterBackgroundService();
-
-    if (isTracking.value) {
-      // --- CLOCK IN ---
-      _clockInTime = DateTime.now();
-      _currentHourlyLogs.clear();
-      _lastLoggedHour = null;
-      totalDistance.value = 0.0;
-
-      // START OS Background foreground process loop
-      bool isRunning = await backgroundService.isRunning();
-      if (!isRunning) {
-        await backgroundService.startService();
-      }
-    } else {
-      // --- CLOCK OUT ---
-      currentSpeed.value = 0.0;
-      _saveCurrentSessionToHistory();
-
-      // STOP OS Background processing loop completely
-      bool isRunning = await backgroundService.isRunning();
-      if (isRunning) {
-        backgroundService.invoke('stopService');
-      }
-    }
   }
 
   void _checkAndLogHourlyProgress(double lat, double lng, String addressName) {
@@ -331,34 +293,6 @@ class TrackingController extends GetxController {
 
     await loadHistoryFromHive();
     _sendHistoryToBackend(newSession);
-  }
-
-  Future<void> sendOrCacheLocation(LocationPayload payload) async {
-    try {
-      final response = await _dio.post('/locations', data: payload.toJson());
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        await syncCachedLocations();
-      } else {
-        await _hiveStorage.cacheLocation(payload);
-      }
-    } catch (e) {
-      await _hiveStorage.cacheLocation(payload);
-    }
-  }
-
-  Future<void> syncCachedLocations() async {
-    final cachedLocations = await _hiveStorage.getCachedLocations();
-    if (cachedLocations.isEmpty) return;
-
-    try {
-      final response = await _dio.post(
-        '/locations/batch',
-        data: cachedLocations.map((loc) => loc.toJson()).toList(),
-      );
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        await _hiveStorage.clearCache();
-      }
-    } catch (_) {}
   }
 
   Future<void> _sendHistoryToBackend(TrackingSession session) async {
